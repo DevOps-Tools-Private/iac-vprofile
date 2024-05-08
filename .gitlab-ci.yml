@@ -1,0 +1,53 @@
+image: hashicorp/terraform:1.6.3
+
+variables:
+  AWS_ACCESS_KEY_ID: $AWS_ACCESS_KEY_ID
+  AWS_SECRET_ACCESS_KEY: $AWS_SECRET_ACCESS_KEY
+  BUCKET_TF_STATE: $BUCKET_TF_STATE
+  AWS_REGION: "us-east-2"
+  EKS_CLUSTER: "vprofile-eks"
+
+cache:
+  key: "${CI_COMMIT_REF_SLUG}"
+  paths:
+    - .terraform
+
+before_script:
+  - export TF_IN_AUTOMATION=1
+  - export TF_INPUT=0
+
+terraform:
+  stage: deploy
+  script:
+    - terraform init -backend-config="bucket=$BUCKET_TF_STATE"
+    - terraform fmt -check
+    - terraform validate
+    - terraform plan -no-color -input=false -out planfile
+  artifacts:
+    paths:
+      - planfile
+    reports:
+      terraform: planfile
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+      changes:
+        - terraform/**/*
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+      changes:
+        - terraform/**/*
+  allow_failure: true
+
+terraform-apply:
+  stage: deploy
+  script:
+    - terraform apply planfile
+  dependencies:
+    - terraform
+  when: manual
+  rules:
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+      changes:
+        - terraform/**/*
+  environment:
+    name: production
+    url: https://example.com
